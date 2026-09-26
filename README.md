@@ -83,12 +83,14 @@ on the network, no matter which `TrustMeshEscrow` contract handled it.
   has ever deployed.
 - `get_gig_count()` - view; how many gigs have been created in total.
 
-**Deployment requirement:** `create_gig` reads
-`trustmesh_escrow.py`'s source directly off disk at call time (GenLayer's
-documented Factory Pattern, via `open("/contract/trustmesh_escrow.py")`).
-`trustmesh_escrow.py` **must** be deployed alongside
-`trustmesh_registry.py`, in the same directory - see
-[Deploying](#deploying-to-genlayer-studionet) below.
+This file is fully self-contained: `trustmesh_escrow.py`'s exact
+source is embedded inside it as the `_TRUSTMESH_ESCROW_SOURCE`
+constant, so `create_gig` never touches the filesystem and this single
+file deploys correctly on its own - including through the Studio web
+UI's single-file "Add From File" upload. See
+[Deploying](#deploying-to-genlayer-studionet) below, and
+[maintaining the embedded copy](#maintaining-the-embedded-escrow-source)
+if you ever edit `trustmesh_escrow.py`.
 
 ### `contracts/trustmesh_escrow.py` - one per gig, deployed by the registry
 
@@ -117,15 +119,36 @@ Studionet is the hosted, stable Studio environment at
 Fund your account first using the built-in faucet (the water-drop
 button next to the account selector).
 
-> **Keep both contract files together.** Because `create_gig` opens
-> `/contract/trustmesh_escrow.py` at call time, whatever deployment
-> method you use must deploy `trustmesh_registry.py` with
-> `trustmesh_escrow.py` present alongside it. The GenLayer CLI does
-> this automatically when both files live in the same project
-> directory (as they do in this repo's `contracts/` folder). If you
-> instead upload only `trustmesh_registry.py` on its own - for example
-> through a single-file upload flow - `create_gig` will fail with a
-> file-not-found error the first time anyone calls it.
+`trustmesh_registry.py` is fully self-contained (see
+[Maintaining the embedded escrow source](#maintaining-the-embedded-escrow-source)
+below), so **any** of the deployment paths below work with no special
+multi-file setup required. `trustmesh_escrow.py` itself never needs to
+be deployed directly - the registry deploys it for you, once per gig,
+the moment `create_gig` is called.
+
+### The Studio web UI
+
+1. Open [studio.genlayer.com](https://studio.genlayer.com) and go to
+   **Contracts** in the left sidebar.
+2. Click **New Contract** → **Add From File**, and upload
+   `contracts/trustmesh_registry.py` on its own. That's it - no need
+   to also upload `trustmesh_escrow.py`.
+3. Open the file in the editor and click the **play icon** (or **Run
+   and Debug**) to deploy it. It takes no constructor arguments.
+4. Once deployed, note the contract address shown - this is
+   `REGISTRY_ADDRESS`. Under **Write Methods**, expand `create_gig`
+   and call it with the freelancer address, client address, a spec
+   URL, `max_attempts`, and `submission_deadline_seconds` (in
+   seconds - e.g. `604800` for 7 days).
+5. Under **Read Methods**, call `get_all_escrows` and copy the last
+   address returned - this is your new `TrustMeshEscrow`'s address.
+6. Studio lets you import any deployed contract by address to interact
+   with it directly - use that to load the new `TrustMeshEscrow`
+   address from step 5 and call `fund`, `submit_deliverable`, and
+   `reclaim_funds` on it from the **Write Methods** panel. Just make
+   sure the active account in Studio matches whichever party is
+   allowed to make that call (the client for `fund`/`reclaim_funds`,
+   the freelancer for `submit_deliverable`) before signing.
 
 ### The GenLayer CLI
 
@@ -134,8 +157,7 @@ npm install -g genlayer
 genlayer network set studionet
 genlayer network info
 
-# 1. Deploy the registry (no constructor args). Run this from the
-#    project root so trustmesh_escrow.py is deployed alongside it.
+# 1. Deploy the registry (no constructor args) - a single self-contained file.
 genlayer deploy --contract contracts/trustmesh_registry.py
 # -> note the printed "Contract Address" - this is REGISTRY_ADDRESS
 
@@ -175,34 +197,63 @@ configured; each call must originate from the correct address (`fund`
 and `reclaim_funds` from the client, `submit_deliverable` from the
 freelancer) or the contract will reject it.
 
-### The Studio web UI
+## Maintaining the embedded escrow source
 
-The Studio web UI's "Add From File" flow uploads one contract at a
-time and does not give `trustmesh_registry.py` a way to see
-`trustmesh_escrow.py` as a sibling file, so `create_gig` cannot read
-its source there. Use the CLI (above) or a
-[deploy script](https://docs.genlayer.com/developers/intelligent-contracts/deploying/deploy-scripts)
-run from this project's root instead. You can still use the Studio UI
-afterwards to inspect state and call methods on the deployed
-addresses.
+`create_gig` doesn't read `trustmesh_escrow.py` off disk - it deploys
+child contracts from a `_TRUSTMESH_ESCROW_SOURCE` string constant that
+is embedded directly inside `trustmesh_registry.py`, generated from the
+real `contracts/trustmesh_escrow.py` file. This is what makes the
+registry deployable as a single file (see
+[fix #5](#what-changed-since-gigresolve)).
+
+**If you ever edit `contracts/trustmesh_escrow.py`, you must
+regenerate the embedded copy afterwards**, or `create_gig` will keep
+silently deploying the old version forever:
+
+```bash
+python3 scripts/sync_escrow_source.py
+```
+
+This rewrites `contracts/trustmesh_registry.py` with an exact,
+byte-for-byte copy of the current `trustmesh_escrow.py` swapped in,
+leaving everything else in the registry untouched. It refuses to run
+(and leaves `trustmesh_registry.py` alone) if the escrow source
+contains anything unsafe to embed as a raw string literal, such as a
+`'''` sequence or a backslash.
+
+`tests/test_embedded_source_in_sync.py` checks that the two files
+are in sync as a plain pytest test - no `gltest`, no running Studio
+instance needed - so it's cheap to run as a pre-commit or CI guard:
+
+```bash
+pytest tests/test_embedded_source_in_sync.py -v
+```
 
 ## Running the tests
 
-`tests/test_trustmesh.py` exercises the full two-contract lifecycle
-against a local GenLayer Studio instance, using mocked validators so
-the result is deterministic and doesn't depend on real network access
-or a live LLM provider. It includes one dedicated regression test per
-fix listed below.
+- `tests/test_trustmesh.py` exercises the full two-contract lifecycle
+  against a local GenLayer Studio instance, using mocked validators so
+  the result is deterministic and doesn't depend on real network
+  access or a live LLM provider. It includes one dedicated regression
+  test per contract-logic fix listed below.
 
-```bash
-pip install genlayer-test
-genlayer init && genlayer up
-gltest tests/test_trustmesh.py -v -s
-```
+  ```bash
+  pip install genlayer-test
+  genlayer init && genlayer up
+  gltest tests/test_trustmesh.py -v -s
+  ```
+
+- `tests/test_embedded_source_in_sync.py` is a plain pytest test (no
+  Studio instance needed) guarding the embedded-source maintenance
+  step described above.
+
+  ```bash
+  pytest tests/test_embedded_source_in_sync.py -v
+  ```
 
 ## What changed since GigResolve
 
-Four production-readiness issues were found and fixed before this
+Five production-readiness issues were found and fixed before this
 rename. Each has a matching comment in the code (search for `FIX #`)
 and a dedicated regression test.
 
@@ -263,6 +314,28 @@ and a dedicated regression test.
    already does.
    → asserted directly in `test_gig_lifecycle_success`
 
+5. **Broken deployment via the Studio web UI (single-file upload).**
+   `create_gig` originally read `trustmesh_escrow.py`'s source off
+   disk at call time via `open("/contract/trustmesh_escrow.py")` -
+   GenLayer's documented Factory Pattern. That only works when both
+   contract files are deployed together from the same directory (e.g.
+   the CLI run from this project's root). Deploying
+   `trustmesh_registry.py` on its own - such as through the Studio web
+   UI's single-file "Add From File" flow - left it with no sibling
+   file to read, so `create_gig` failed with a file-not-found error
+   the first time anyone called it, even though the registry itself
+   had deployed successfully.
+
+   **Fix:** `trustmesh_escrow.py`'s exact source is now embedded
+   directly inside `trustmesh_registry.py` as the
+   `_TRUSTMESH_ESCROW_SOURCE` string constant, generated by
+   `scripts/sync_escrow_source.py`. `create_gig` deploys from that
+   constant instead of touching the filesystem, so
+   `trustmesh_registry.py` is fully self-contained and deploys
+   correctly from a single-file upload, the CLI, or anywhere else - see
+   [Maintaining the embedded escrow source](#maintaining-the-embedded-escrow-source).
+   → `tests/test_embedded_source_in_sync.py`
+
 ## Notes and things to keep in mind
 
 - `spec_url` and any `evidence_url` must return plain, fetchable
@@ -287,6 +360,13 @@ and a dedicated regression test.
   documented Factory Pattern) so the new escrow is usable right away.
   The narrow trade-off is documented directly above that call in
   `trustmesh_registry.py`.
+- Embedding `trustmesh_escrow.py`'s full source inside
+  `trustmesh_registry.py` makes the registry's own deployed bytecode
+  larger (roughly the escrow file's size, plus a little for the string
+  literal itself). That's an inherent, expected cost of single-file
+  portability, not a bug - `trustmesh_registry.py` is meant to be
+  edited only through `scripts/sync_escrow_source.py`, never by
+  hand-editing the embedded constant.
 - This project is meant as a clear, self-contained example of the
   **secure** version of contract-to-contract interaction on GenLayer -
   a main contract that deploys and therefore authenticates its own
