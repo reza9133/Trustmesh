@@ -3,8 +3,7 @@
 """
 TrustMeshRegistry
 ------------------
-This is the "main" contract of the TrustMesh network (formerly known
-as GigResolve).
+This is the "main" contract of the TrustMesh network.
 
 Deploy this contract exactly once. Instead of trusting whichever
 address happens to call it, TrustMeshRegistry is a **factory**: it
@@ -87,9 +86,9 @@ _TRUSTMESH_ESCROW_SOURCE = r'''# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7
 """
 TrustMeshEscrow
 ----------------
-This is a "child" contract in the TrustMesh network (formerly known as
-GigResolve). You do not deploy this file directly if you want the
-result to be trusted by a TrustMeshRegistry - instead call
+This is a "child" contract in the TrustMesh network. You do not deploy
+this file directly if you want the result to be trusted by a
+TrustMeshRegistry - instead call
 `create_gig(...)` on an already-deployed TrustMeshRegistry, which
 deploys one of these for you via `gl.deploy_contract` and immediately
 records its address.

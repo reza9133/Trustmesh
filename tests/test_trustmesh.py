@@ -1,5 +1,5 @@
 """
-Integration tests for the TrustMesh contract pair (formerly GigResolve).
+Integration tests for the TrustMesh contract pair.
 
 Run this with the `gltest` CLI against a running GenLayer Studio
 instance (see the README for setup). It uses mocked validators so the

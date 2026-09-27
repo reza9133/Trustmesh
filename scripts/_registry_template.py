@@ -3,8 +3,7 @@
 """
 TrustMeshRegistry
 ------------------
-This is the "main" contract of the TrustMesh network (formerly known
-as GigResolve).
+This is the "main" contract of the TrustMesh network.
 
 Deploy this contract exactly once. Instead of trusting whichever
 address happens to call it, TrustMeshRegistry is a **factory**: it

@@ -3,12 +3,6 @@
 An AI-adjudicated escrow network for freelance milestones, built as two
 linked GenLayer Intelligent Contracts.
 
-> TrustMesh was previously prototyped under the name **GigResolve**.
-> The architecture and behavior described below are the
-> production-hardened version - see [What changed since
-> GigResolve](#what-changed-since-gigresolve) for the full list of
-> fixes.
-
 TrustMesh is split into a **registry contract** and any number of
 **escrow contracts** that it deploys itself:
 
@@ -35,7 +29,7 @@ it back to you. The escrow later reports its outcome back to the
 registry over an internal message. Because the registry deployed every
 escrow it will ever trust, `gl.message.sender_address` on that
 `report_outcome` call is a real authentication check, not just a
-convention - see [fix #1](#what-changed-since-gigresolve) below.
+convention - see [fix #1](#production-hardening-notes) below.
 
 ## What it does
 
@@ -204,7 +198,7 @@ child contracts from a `_TRUSTMESH_ESCROW_SOURCE` string constant that
 is embedded directly inside `trustmesh_registry.py`, generated from the
 real `contracts/trustmesh_escrow.py` file. This is what makes the
 registry deployable as a single file (see
-[fix #5](#what-changed-since-gigresolve)).
+[fix #5](#production-hardening-notes)).
 
 **If you ever edit `contracts/trustmesh_escrow.py`, you must
 regenerate the embedded copy afterwards**, or `create_gig` will keep
@@ -251,11 +245,11 @@ pytest tests/test_embedded_source_in_sync.py -v
   pytest tests/test_embedded_source_in_sync.py -v
   ```
 
-## What changed since GigResolve
+## Production hardening notes
 
-Five production-readiness issues were found and fixed before this
-rename. Each has a matching comment in the code (search for `FIX #`)
-and a dedicated regression test.
+Five production-readiness issues were found and fixed during
+development. Each has a matching comment in the code (search for `FIX
+#`) and a dedicated regression test.
 
 1. **Reputation spoofing (critical auth flaw).** The old
    `ReputationRegistry.register_gig(...)` only checked "has this

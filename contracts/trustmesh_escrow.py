@@ -3,9 +3,9 @@
 """
 TrustMeshEscrow
 ----------------
-This is a "child" contract in the TrustMesh network (formerly known as
-GigResolve). You do not deploy this file directly if you want the
-result to be trusted by a TrustMeshRegistry - instead call
+This is a "child" contract in the TrustMesh network. You do not deploy
+this file directly if you want the result to be trusted by a
+TrustMeshRegistry - instead call
 `create_gig(...)` on an already-deployed TrustMeshRegistry, which
 deploys one of these for you via `gl.deploy_contract` and immediately
 records its address.
