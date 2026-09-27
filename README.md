@@ -31,6 +31,21 @@ escrow it will ever trust, `gl.message.sender_address` on that
 `report_outcome` call is a real authentication check, not just a
 convention - see [fix #1](#production-hardening-notes) below.
 
+## Deployed instance (Studionet)
+
+`TrustMeshRegistry` is already deployed on Studionet at:
+
+```
+0x7Dcd8E54C8bd2Ca4805f132311dB31f425FEdcAd
+```
+
+You do not need to deploy it again. Every command and walkthrough
+below uses this address as `REGISTRY_ADDRESS`. There is no single
+fixed "escrow address" - `create_gig(...)` deploys a brand-new
+`TrustMeshEscrow` for every gig, so each one gets discovered
+dynamically (via `create_gig`'s own return value, or
+`get_all_escrows()`), never hardcoded.
+
 ## What it does
 
 1. A client and a freelancer agree on a gig. The spec is written down
@@ -122,27 +137,30 @@ the moment `create_gig` is called.
 
 ### The Studio web UI
 
-1. Open [studio.genlayer.com](https://studio.genlayer.com) and go to
-   **Contracts** in the left sidebar.
-2. Click **New Contract** → **Add From File**, and upload
-   `contracts/trustmesh_registry.py` on its own. That's it - no need
-   to also upload `trustmesh_escrow.py`.
-3. Open the file in the editor and click the **play icon** (or **Run
-   and Debug**) to deploy it. It takes no constructor arguments.
-4. Once deployed, note the contract address shown - this is
-   `REGISTRY_ADDRESS`. Under **Write Methods**, expand `create_gig`
-   and call it with the freelancer address, client address, a spec
-   URL, `max_attempts`, and `submission_deadline_seconds` (in
-   seconds - e.g. `604800` for 7 days).
-5. Under **Read Methods**, call `get_all_escrows` and copy the last
+The registry is already deployed (see the address above) - you only
+need to import it, not deploy it.
+
+1. Open [studio.genlayer.com](https://studio.genlayer.com).
+2. Use Studio's "import a deployed contract by address" option and
+   enter `0x7Dcd8E54C8bd2Ca4805f132311dB31f425FEdcAd`. This loads
+   `TrustMeshRegistry` so you can call it directly.
+3. Under **Write Methods**, expand `create_gig` and call it with the
+   freelancer address, client address, a spec URL, `max_attempts`, and
+   `submission_deadline_seconds` (in seconds - e.g. `604800` for 7
+   days).
+4. Under **Read Methods**, call `get_all_escrows` and copy the last
    address returned - this is your new `TrustMeshEscrow`'s address.
-6. Studio lets you import any deployed contract by address to interact
-   with it directly - use that to load the new `TrustMeshEscrow`
-   address from step 5 and call `fund`, `submit_deliverable`, and
-   `reclaim_funds` on it from the **Write Methods** panel. Just make
-   sure the active account in Studio matches whichever party is
-   allowed to make that call (the client for `fund`/`reclaim_funds`,
-   the freelancer for `submit_deliverable`) before signing.
+5. Import that address the same way to load the new `TrustMeshEscrow`,
+   then call `fund`, `submit_deliverable`, and `reclaim_funds` on it
+   from the **Write Methods** panel. Just make sure the active account
+   in Studio matches whichever party is allowed to make that call (the
+   client for `fund`/`reclaim_funds`, the freelancer for
+   `submit_deliverable`) before signing.
+
+If you ever *do* want your own independent instance instead of sharing
+this one, upload `contracts/trustmesh_registry.py` on its own via **New
+Contract → Add From File** and deploy it (no constructor arguments,
+no need to also upload `trustmesh_escrow.py`).
 
 ### The GenLayer CLI
 
@@ -151,13 +169,12 @@ npm install -g genlayer
 genlayer network set studionet
 genlayer network info
 
-# 1. Deploy the registry (no constructor args) - a single self-contained file.
-genlayer deploy --contract contracts/trustmesh_registry.py
-# -> note the printed "Contract Address" - this is REGISTRY_ADDRESS
+# The registry is already deployed - no need to run `genlayer deploy`.
+REGISTRY_ADDRESS=0x7Dcd8E54C8bd2Ca4805f132311dB31f425FEdcAd
 
-# 2. Create a gig through the factory (as either party, or a third
+# 1. Create a gig through the factory (as either party, or a third
 #    party setting the gig up on their behalf)
-genlayer write <REGISTRY_ADDRESS> create_gig \
+genlayer write $REGISTRY_ADDRESS create_gig \
   --args addr#<FREELANCER_ADDRESS> \
          addr#<CLIENT_ADDRESS> \
          "https://example.org/spec-for-this-gig" \
@@ -165,26 +182,34 @@ genlayer write <REGISTRY_ADDRESS> create_gig \
          604800
 # max_attempts=3, submission_deadline_seconds=604800 (7 days)
 
-# 3. Look up the escrow address create_gig just deployed
-genlayer call <REGISTRY_ADDRESS> get_all_escrows
+# 2. Look up the escrow address create_gig just deployed
+genlayer call $REGISTRY_ADDRESS get_all_escrows
 # -> take the last address in the returned list as ESCROW_ADDRESS
+#    (every gig gets its own fresh escrow address - there is no
+#    single fixed one to hardcode here)
+ESCROW_ADDRESS=<paste the address from the previous command>
 
-# 4. Fund the gig as the client
-genlayer write <ESCROW_ADDRESS> fund
+# 3. Fund the gig as the client
+genlayer write $ESCROW_ADDRESS fund
 
-# 5. Submit the deliverable as the freelancer
-genlayer write <ESCROW_ADDRESS> submit_deliverable \
+# 4. Submit the deliverable as the freelancer
+genlayer write $ESCROW_ADDRESS submit_deliverable \
   --args "https://example.org/evidence-for-this-gig"
 
-# 6. Check the outcome
-genlayer call <ESCROW_ADDRESS> get_status
-genlayer call <REGISTRY_ADDRESS> get_reputation --args addr#<FREELANCER_ADDRESS>
+# 5. Check the outcome
+genlayer call $ESCROW_ADDRESS get_status
+genlayer call $REGISTRY_ADDRESS get_reputation --args addr#<FREELANCER_ADDRESS>
 
 # If the freelancer goes silent instead, once the deadline has
 # passed the client can reclaim funds directly:
-genlayer call <ESCROW_ADDRESS> is_reclaimable
-genlayer write <ESCROW_ADDRESS> reclaim_funds
+genlayer call $ESCROW_ADDRESS is_reclaimable
+genlayer write $ESCROW_ADDRESS reclaim_funds
 ```
+
+If you deploy your own separate registry instance instead of using the
+shared one above, just run `genlayer deploy --contract
+contracts/trustmesh_registry.py` first and use the address it prints
+as `REGISTRY_ADDRESS` instead.
 
 Switching accounts between steps depends on how your CLI signer is
 configured; each call must originate from the correct address (`fund`
